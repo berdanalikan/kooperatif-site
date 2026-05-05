@@ -8,38 +8,55 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { Loader2, CheckCircle2 } from "lucide-react";
 
+/** National mobile: 10 digits (5XXXXXXXXX) → form state `+905XXXXXXXXX` */
+const TR_E164_REGEX = /^\+905\d{9}$/;
+
+function extractNationalMobileDigits(input: string): string {
+  let digits = input.replace(/\D/g, "");
+  if (digits.startsWith("0")) digits = digits.slice(1);
+  if (digits.startsWith("90")) digits = digits.slice(2);
+  return digits.slice(0, 10);
+}
+
+function nationalDigitsToE164(national: string): string {
+  return national.length === 0 ? "" : `+90${national}`;
+}
+
+/** Example: `5321234567` → `(532) 123 45 67` */
+function formatTrNationalMask(d: string): string {
+  const clean = d.slice(0, 10);
+  if (!clean) return "";
+  if (clean.length <= 3) {
+    return clean.length < 3 ? `(${clean}` : `(${clean})`;
+  }
+  const p1 = clean.slice(0, 3);
+  const rest = clean.slice(3);
+  const p2 = rest.slice(0, 3);
+  const p3 = rest.slice(3, 5);
+  const p4 = rest.slice(5, 7);
+  let s = `(${p1})`;
+  if (p2) s += ` ${p2}`;
+  if (p3) s += ` ${p3}`;
+  if (p4) s += ` ${p4}`;
+  return s;
+}
+
 const schema = z.object({
   full_name: z.string().trim().min(2, "Ad-soyad en az 2 karakter olmalı").max(100),
-  phone_digits: z
+  phone: z
     .string()
     .trim()
-    .length(10, "Telefon numarası 10 haneli olmalı (5xx xxx xx xx)"),
+    .regex(TR_E164_REGEX, "Geçerli bir Türkiye cep telefonu girin: +90 (5XX) XXX XX XX"),
   email: z.string().trim().email("Geçerli bir e-posta girin").max(255),
   kvkk_consent: z.literal(true, { errorMap: () => ({ message: "KVKK metnini onaylayın" }) }),
 });
-
-function toPhoneDigits(input: string) {
-  const digits = input.replace(/\D/g, "");
-  // Keep only last 10 digits (user may paste with 0/90)
-  const trimmed = digits.length > 10 ? digits.slice(digits.length - 10) : digits;
-  return trimmed.slice(0, 10);
-}
-
-function formatTRMobile(digits: string) {
-  const d = digits.replace(/\D/g, "").slice(0, 10);
-  const p1 = d.slice(0, 3);
-  const p2 = d.slice(3, 6);
-  const p3 = d.slice(6, 8);
-  const p4 = d.slice(8, 10);
-  return [p1, p2, p3, p4].filter(Boolean).join(" ");
-}
 
 export function RegistrationForm({
   accentClass = "bg-primary hover:bg-primary/90 text-primary-foreground",
 }: {
   accentClass?: string;
 } = {}) {
-  const [form, setForm] = useState({ full_name: "", phone_digits: "", email: "", kvkk_consent: false });
+  const [form, setForm] = useState({ full_name: "", phone: "", email: "", kvkk_consent: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -57,7 +74,7 @@ export function RegistrationForm({
     setLoading(true);
     const { error } = await supabase.from("kooperatif_registrations").insert({
       full_name: parsed.data.full_name,
-      phone: `+90${parsed.data.phone_digits}`,
+      phone: parsed.data.phone,
       email: parsed.data.email,
       kvkk_consent: true,
       kvkk_consent_at: new Date().toISOString(),
@@ -102,20 +119,28 @@ export function RegistrationForm({
       </div>
       <div>
         <Label htmlFor="phone">Telefon</Label>
-        <div className="relative mt-1.5">
-          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-muted-foreground">
+        <div className="mt-1.5 flex rounded-md border border-input bg-transparent shadow-sm focus-within:ring-1 focus-within:ring-ring">
+          <span
+            className="flex shrink-0 items-center border-r border-input bg-muted/40 px-3 text-sm tabular-nums text-muted-foreground select-none"
+            aria-hidden
+          >
             +90
           </span>
           <Input
             id="phone"
-            inputMode="tel"
-            value={formatTRMobile(form.phone_digits)}
-            onChange={(e) => setForm({ ...form, phone_digits: toPhoneDigits(e.target.value) })}
-            placeholder="555 555 55 55"
-            className="pl-14"
+            type="text"
+            inputMode="numeric"
+            autoComplete="tel-national"
+            value={formatTrNationalMask(form.phone.startsWith("+90") ? form.phone.slice(3) : form.phone)}
+            onChange={(e) => {
+              const nextNational = extractNationalMobileDigits(e.target.value);
+              setForm({ ...form, phone: nationalDigitsToE164(nextNational) });
+            }}
+            placeholder="(5XX) XXX XX XX"
+            className="border-0 shadow-none focus-visible:ring-0 md:text-sm"
           />
         </div>
-        {errors.phone_digits && <p className="mt-1 text-sm text-destructive">{errors.phone_digits}</p>}
+        {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone}</p>}
       </div>
       <div>
         <Label htmlFor="email">E-posta</Label>
