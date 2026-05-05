@@ -10,22 +10,36 @@ import { Loader2, CheckCircle2 } from "lucide-react";
 
 const schema = z.object({
   full_name: z.string().trim().min(2, "Ad-soyad en az 2 karakter olmalı").max(100),
-  phone: z
+  phone_digits: z
     .string()
     .trim()
-    .min(10, "Geçerli bir telefon numarası girin")
-    .max(20)
-    .regex(/^[0-9+()\s-]+$/, "Telefon yalnızca rakam ve +()- içerebilir"),
+    .length(10, "Telefon numarası 10 haneli olmalı (5xx xxx xx xx)"),
   email: z.string().trim().email("Geçerli bir e-posta girin").max(255),
   kvkk_consent: z.literal(true, { errorMap: () => ({ message: "KVKK metnini onaylayın" }) }),
 });
+
+function toPhoneDigits(input: string) {
+  const digits = input.replace(/\D/g, "");
+  // Keep only last 10 digits (user may paste with 0/90)
+  const trimmed = digits.length > 10 ? digits.slice(digits.length - 10) : digits;
+  return trimmed.slice(0, 10);
+}
+
+function formatTRMobile(digits: string) {
+  const d = digits.replace(/\D/g, "").slice(0, 10);
+  const p1 = d.slice(0, 3);
+  const p2 = d.slice(3, 6);
+  const p3 = d.slice(6, 8);
+  const p4 = d.slice(8, 10);
+  return [p1, p2, p3, p4].filter(Boolean).join(" ");
+}
 
 export function RegistrationForm({
   accentClass = "bg-primary hover:bg-primary/90 text-primary-foreground",
 }: {
   accentClass?: string;
 } = {}) {
-  const [form, setForm] = useState({ full_name: "", phone: "", email: "", kvkk_consent: false });
+  const [form, setForm] = useState({ full_name: "", phone_digits: "", email: "", kvkk_consent: false });
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
@@ -43,7 +57,7 @@ export function RegistrationForm({
     setLoading(true);
     const { error } = await supabase.from("kooperatif_registrations").insert({
       full_name: parsed.data.full_name,
-      phone: parsed.data.phone,
+      phone: `+90${parsed.data.phone_digits}`,
       email: parsed.data.email,
       kvkk_consent: true,
       kvkk_consent_at: new Date().toISOString(),
@@ -88,16 +102,20 @@ export function RegistrationForm({
       </div>
       <div>
         <Label htmlFor="phone">Telefon</Label>
-        <Input
-          id="phone"
-          inputMode="tel"
-          value={form.phone}
-          onChange={(e) => setForm({ ...form, phone: e.target.value })}
-          maxLength={20}
-          placeholder="0 5xx xxx xx xx"
-          className="mt-1.5"
-        />
-        {errors.phone && <p className="mt-1 text-sm text-destructive">{errors.phone}</p>}
+        <div className="relative mt-1.5">
+          <span className="pointer-events-none absolute inset-y-0 left-0 flex items-center pl-3 text-sm text-muted-foreground">
+            +90
+          </span>
+          <Input
+            id="phone"
+            inputMode="tel"
+            value={formatTRMobile(form.phone_digits)}
+            onChange={(e) => setForm({ ...form, phone_digits: toPhoneDigits(e.target.value) })}
+            placeholder="555 555 55 55"
+            className="pl-14"
+          />
+        </div>
+        {errors.phone_digits && <p className="mt-1 text-sm text-destructive">{errors.phone_digits}</p>}
       </div>
       <div>
         <Label htmlFor="email">E-posta</Label>
